@@ -1,0 +1,7 @@
+.idea/
+*.kate-swp
+*.swp
+*~
+.DS_Store
+*.zip
+*.xpi
