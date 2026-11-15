@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "ngramIntl — Multi-Test Sync",
   "version": "2.0.0",
-  "description": "Capture IKI chirurgicale des n-grams (Monkeytype, TypeRacer, 10FastFingers) vers ngrams-international-3.0.",
+  "description": "Surgical IKI n-gram telemetry capture (Monkeytype, TypeRacer, 10FastFingers) for ngrams-international-3.0.",
   "permissions": [
     "storage"
   ],

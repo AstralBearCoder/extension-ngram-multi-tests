@@ -30,7 +30,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const allOpt = document.createElement('option');
     allOpt.value = 'ALL';
-    allOpt.textContent = `Toutes (${tests.length})`;
+    allOpt.textContent = `All (${tests.length})`;
     langFilterEl.appendChild(allOpt);
 
     for (const l of langs) {
@@ -57,7 +57,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (visible.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'empty';
-      empty.textContent = 'Aucun test enregistré.';
+      empty.textContent = 'No recorded tests.';
       testsListEl.appendChild(empty);
       btnExport.disabled = true;
       btnClear.disabled = allTests.length === 0;
@@ -94,7 +94,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       const metaDiv = document.createElement('div');
       metaDiv.className = 'test-meta';
-      metaDiv.textContent = `${t.strokes} frappes · ${t.ngramCount} n-grams`;
+      metaDiv.textContent = `${t.strokes} keystrokes · ${t.ngramCount} n-grams`;
 
       info.appendChild(nameDiv);
       info.appendChild(metaDiv);
@@ -103,7 +103,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       const delBtn = document.createElement('button');
       delBtn.className = 'btn-del-one';
-      delBtn.title = 'Supprimer ce test';
+      delBtn.title = 'Delete this test';
       delBtn.textContent = '✕';
       delBtn.addEventListener('click', async () => {
         allTests = await S.deleteTest(t.id);
@@ -124,7 +124,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const visible = getFilteredTests();
     const count = visible.filter((t) => selectedIds.has(t.id)).length;
     btnExport.disabled = count === 0;
-    btnExport.textContent = count > 0 ? `Exporter JSON (${count})` : 'Exporter JSON';
+    btnExport.textContent = count > 0 ? `Export JSON (${count})` : 'Export JSON';
   }
 
   async function refreshUI() {
@@ -135,11 +135,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const bytes = await S.getBytesInUse();
     const kb = Math.round(bytes / 1024);
-    const mbText = kb >= 1024 ? `${(kb / 1024).toFixed(1)} Mo` : `${kb} Ko`;
-    quotaEl.textContent = `${allTests.length} test${allTests.length > 1 ? 's' : ''} · ${mbText}`;
+    const sizeText = kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`;
+    quotaEl.textContent = `${allTests.length} test${allTests.length === 1 ? '' : 's'} · ${sizeText}`;
     quotaEl.className = (allTests.length >= 400 || bytes >= 4 * 1024 * 1024) ? 'quota warn' : 'quota';
     if (allTests.length >= 400) {
-      quotaEl.title = 'Recommandation : exportez puis videz avant ~800 tests pour préserver le quota.';
+      quotaEl.title = 'Recommendation: export and clear before ~800 tests to stay safely within storage quota.';
     }
 
     populateLangFilter(allTests);
@@ -151,7 +151,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (!r.checked) return;
       const nextQu = r.value === '1';
       if (allTests.length > 0) {
-        const ok = confirm('Changer entre Qu = 1 et Qu = 2 supprimera tous les tests enregistrés. Êtes-vous sûr de vouloir continuer ?');
+        const ok = confirm('Switching between Qu = 1 and Qu = 2 will delete all recorded tests. Are you sure you want to continue?');
         if (!ok) {
           await initPrefs();
           return;
@@ -200,7 +200,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   btnClear.addEventListener('click', async () => {
     if (!allTests.length) return;
-    if (confirm(`Supprimer définitivement les ${allTests.length} test(s) enregistré(s) ?`)) {
+    if (confirm(`Permanently delete all ${allTests.length} recorded test(s)?`)) {
       await S.clearAllTests();
       selectedIds.clear();
       await refreshUI();

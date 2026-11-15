@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <style>
@@ -128,12 +128,12 @@
       <img src="icons/icon32.png" alt="ngramIntl">
       <h3>ngramIntl Sync</h3>
     </div>
-    <span id="quota-label" class="quota">0 tests · 0 Ko</span>
+    <span id="quota-label" class="quota">0 tests · 0 KB</span>
   </div>
 
   <div class="panel">
     <div class="row qu-toggle">
-      <span>Tokenisation <strong>Qu</strong> :</span>
+      <span><strong>Qu</strong> tokenization:</span>
       <div style="display:flex;gap:10px;">
         <label><input type="radio" name="quMode" value="0"> qu = 2</label>
         <label><input type="radio" name="quMode" value="1"> qu = 1</label>
@@ -147,15 +147,15 @@
   </div>
 
   <div class="panel row">
-    <span>Langue export : <select id="lang-filter"><option value="ALL">Toutes</option></select></span>
-    <label style="cursor:pointer;color:#94a3b8;"><input type="checkbox" id="select-all" checked> Tout cocher</label>
+    <span>Export language: <select id="lang-filter"><option value="ALL">All</option></select></span>
+    <label style="cursor:pointer;color:#94a3b8;"><input type="checkbox" id="select-all" checked> Select all</label>
   </div>
 
   <div id="tests-list" class="tests-list"></div>
 
   <div class="actions">
-    <button id="btn-export" class="btn btn-export">Exporter JSON</button>
-    <button id="btn-clear" class="btn btn-clear">Tout vider</button>
+    <button id="btn-export" class="btn btn-export">Export JSON</button>
+    <button id="btn-clear" class="btn btn-clear">Clear all</button>
   </div>
 
   <script src="core/storage.js"></script>

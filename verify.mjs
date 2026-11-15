@@ -8,8 +8,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const storageCode = fs.readFileSync(path.join(__dirname, 'core', 'storage.js'), 'utf8');
 const engineCode = fs.readFileSync(path.join(__dirname, 'core', 'engine.js'), 'utf8');
 
-assert.ok(storageCode.includes('__NgramStorage'), 'core/storage.js invalide');
-assert.ok(engineCode.includes('__NgramEngine'), 'core/engine.js invalide');
+assert.ok(storageCode.includes('__NgramStorage'), 'Invalid core/storage.js');
+assert.ok(engineCode.includes('__NgramEngine'), 'Invalid core/engine.js');
 
 const memStore = {};
 let fakeNow = 1000;
@@ -63,7 +63,7 @@ const { S, E } = vm.runInContext(
 const { SurgicalEngine } = E;
 const plain = (v) => JSON.parse(JSON.stringify(v));
 
-// Test 1: Isolation Backspace sur "t[x][Backspace]he"
+// Test 1: Backspace isolation on "t[x][Backspace]he"
 const eng = new SurgicalEngine('monkeytype', 'Monkeytype');
 eng.startWord('the');
 fakeNow = 1000; eng.onKeyDown({ isTrusted: true, key: 't' }); eng.onWordInput('t');
@@ -73,11 +73,11 @@ fakeNow = 1480; eng.onKeyDown({ isTrusted: true, key: 'h' }); eng.onWordInput('t
 fakeNow = 1590; eng.onKeyDown({ isTrusted: true, key: 'e' }); eng.onWordInput('the');
 eng.flushCurrentWord(false);
 
-assert.deepEqual(plain(eng.staged['th']), [2, 0, 0, 1], '"th" doit compter 1 erreur et 0ms de vitesse');
-assert.deepEqual(plain(eng.staged['he']), [2, 1, 110, 0], '"he" doit mesurer exactement 1590 - 1480 = 110ms');
-assert.deepEqual(plain(eng.staged['the']), [3, 0, 0, 1], '"the" doit compter 1 erreur');
+assert.deepEqual(plain(eng.staged['th']), [2, 0, 0, 1], '"th" must record 1 error and 0 ms speed');
+assert.deepEqual(plain(eng.staged['he']), [2, 1, 110, 0], '"he" must measure exactly 1590 - 1480 = 110 ms');
+assert.deepEqual(plain(eng.staged['the']), [3, 0, 0, 1], '"the" must record 1 error');
 
-// Test 2: Mot >= 5 lettres & mode qu=1
+// Test 2: Word >= 5 letters & qu=1 mode
 await S.switchQuMode(true);
 eng.quAsOne = true;
 eng.resetTest();
@@ -88,11 +88,11 @@ fakeNow = 2170; eng.onKeyDown({ isTrusted: true, key: 'i' }); eng.onWordInput('q
 fakeNow = 2260; eng.onKeyDown({ isTrusted: true, key: 'c' }); eng.onWordInput('quic');
 fakeNow = 2340; eng.onKeyDown({ isTrusted: true, key: 'k' }); eng.onWordInput('quick');
 eng.flushCurrentWord(false);
-assert.deepEqual(plain(eng.staged['qui']), [2, 1, 170, 0], 'En mode qu=1, "qui" mesure 2170 - 2000 = 170ms');
+assert.deepEqual(plain(eng.staged['qui']), [2, 1, 170, 0], 'In qu=1 mode, "qui" must measure 2170 - 2000 = 170 ms');
 
 await eng.commitTest('words 10', 'english');
 const exported = await S.buildExportPayload(null, 'eng');
-assert.ok(exported.stats.eng_qu, 'Doit exporter sous la clé eng_qu en mode qu=1');
+assert.ok(exported.stats.eng_qu, 'Must export under eng_qu key in qu=1 mode');
 assert.equal(exported.stats.eng_qu.fmt, 5);
 console.log('Equivalence checks PASSED.');
 

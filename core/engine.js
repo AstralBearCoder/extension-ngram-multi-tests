@@ -1,4 +1,3 @@
-
 (() => {
   'use strict';
 
@@ -322,7 +321,7 @@
       strong.textContent = 'ngramIntl';
       text.appendChild(document.createTextNode('⚡ '));
       text.appendChild(strong);
-      text.appendChild(document.createTextNode(` : ${label} (${totalTests} total)`));
+      text.appendChild(document.createTextNode(`: ${label} (${totalTests} total)`));
 
       content.appendChild(text);
       toast.appendChild(content);
