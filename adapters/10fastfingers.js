@@ -4,82 +4,118 @@
   const { SurgicalEngine } = globalThis.__NgramEngine;
   const engine = new SurgicalEngine('fastfingers10', '10FastFingers');
 
-  let currentWordNr = null;
-  let boundInput = null;
+  let currentWordKey = null;
+  let awaitingSpaceClear = false;
+  let wasEnded = false;
+
+  function isBoxInput(el) {
+    return Boolean(el && el.dataset && el.dataset.testid === 'Typing-box-input');
+  }
+
+  function isTestFinished() {
+    return Boolean(document.querySelector('[data-testid="typing-test-result-root"]'));
+  }
 
   function detectLang() {
+    const hidden = document.querySelector('input[name="languageselect"]')?.value;
+    if (hidden) return hidden;
+    const label = document.querySelector('[data-testid="LanguageDropdown-current-value"]')?.textContent;
+    if (label) return label.trim();
     const m = location.pathname.match(/\/(?:typing-test|advanced-typing-test)\/([a-z]+)/i);
-    if (m && m[1]) return m[1];
-    const h1 = document.querySelector('#test-header, h1')?.textContent || '';
-    return h1.split(' ')[0] || 'english';
+    return (m && m[1]) ? m[1] : 'english';
   }
 
   function getTestType() {
     if (location.pathname.includes('advanced-typing-test')) return '1000 words';
     if (location.pathname.includes('competition')) return 'competition';
-    if (location.pathname.includes('text-practice')) return 'practice';
-    return '60s top200';
+    return '60s';
+  }
+
+  function readActiveWordState() {
+    const box = document.querySelector('[data-testid="word-box-words"]');
+    if (!box) return null;
+
+    const awSpans = box.querySelectorAll('span[class*="-aw"]');
+    if (!awSpans.length) return null;
+
+    let word = '';
+    for (let i = 0; i < awSpans.length; i++) {
+      word += awSpans[i].textContent || '';
+    }
+    word = word.trim();
+    if (!word) return null;
+
+    const typedCount = box.querySelectorAll('span[class*="-t"]').length;
+    return { key: `${typedCount}:${word}`, word };
   }
 
   function syncActiveWord() {
-    const activeSpan = document.querySelector('#row1 span.highlight');
-    if (!activeSpan) return;
-    const nr = activeSpan.getAttribute('wordnr') || activeSpan.textContent;
-    if (nr !== currentWordNr) {
-      if (currentWordNr !== null && engine.testActive) {
+    const state = readActiveWordState();
+    if (!state) return;
+    if (state.key !== currentWordKey) {
+      if (currentWordKey !== null && engine.testActive) {
         engine.flushCurrentWord(false);
       }
-      currentWordNr = nr;
-      engine.startWord((activeSpan.textContent || '').trim());
+      currentWordKey = state.key;
+      wasEnded = false;
+      engine.startWord(state.word);
     }
   }
 
-  function attach() {
-    const input = document.getElementById('inputfield');
-    const row1 = document.getElementById('row1');
-    const resultEl = document.getElementById('auswertung-result');
-    if (!input || !row1) {
-      setTimeout(attach, 600);
-      return;
-    }
+  window.addEventListener('keydown', (e) => {
+    if (!isBoxInput(e.target)) return;
+    if (e.key === 'F5' || e.key === 'Escape') return;
+    if (isTestFinished()) return;
 
-    if (boundInput !== input) {
-      boundInput = input;
+    syncActiveWord();
+    engine.onKeyDown(e);
 
-      input.addEventListener('keydown', (e) => {
-        if (e.key === 'F5' || e.key === 'Escape') return;
-        syncActiveWord();
-        engine.onKeyDown(e);
-
-        if (e.key === ' ' && engine.testActive) {
-          engine.flushCurrentWord(false);
-          currentWordNr = null;
+    if (e.key === ' ' && engine.testActive) {
+      const ta = e.target;
+      engine.flushCurrentWord(false);
+      currentWordKey = null;
+      awaitingSpaceClear = true;
+      queueMicrotask(() => {
+        if ((ta.value || '').trim() === '') {
+          awaitingSpaceClear = false;
         }
-      }, true);
-
-      input.addEventListener('input', () => {
-        syncActiveWord();
-        const val = input.value || '';
-        if (!val && engine.prevTypedLen > 0) return;
-        engine.onWordInput(val.trimEnd());
       });
     }
+  }, true);
 
-    const obs = new MutationObserver(() => {
-      const wordsHidden = document.getElementById('words')?.style.display === 'none';
-      const resultVisible = resultEl && window.getComputedStyle(resultEl).display !== 'none' && resultEl.innerHTML.trim().length > 0;
-      if ((wordsHidden || resultVisible) && engine.testActive) {
-        engine.flushCurrentWord(true);
-        currentWordNr = null;
-        engine.commitTest(getTestType(), detectLang());
-      } else if (!wordsHidden && !resultVisible) {
-        syncActiveWord();
+  document.addEventListener('input', (e) => {
+    if (!isBoxInput(e.target)) return;
+    if (isTestFinished()) return;
+
+    const val = e.target.value || '';
+    if (awaitingSpaceClear) {
+      if (val.trim() === '') {
+        awaitingSpaceClear = false;
+        return;
       }
-    });
+      if (val.endsWith(' ')) return;
+      awaitingSpaceClear = false;
+    }
 
-    if (resultEl) obs.observe(resultEl, { childList: true, attributes: true, attributeFilter: ['style'] });
-    obs.observe(row1, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
-  }
+    syncActiveWord();
+    engine.onWordInput(val.trimEnd());
+  }, true);
 
-  attach();
+  const lifecycleObserver = new MutationObserver(() => {
+    const finished = isTestFinished();
+    if (finished && !wasEnded && engine.testActive) {
+      wasEnded = true;
+      engine.flushCurrentWord(true);
+      currentWordKey = null;
+      awaitingSpaceClear = false;
+      engine.commitTest(getTestType(), detectLang());
+    } else if (!finished) {
+      wasEnded = false;
+    }
+  });
+
+  lifecycleObserver.observe(document.body, {
+    childList: true,
+    subtree: true
+  });
 })();
