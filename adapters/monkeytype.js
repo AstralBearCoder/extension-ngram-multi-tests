@@ -5,7 +5,7 @@
   const engine = new SurgicalEngine('monkeytype', 'Monkeytype');
 
   let activeWordEl = null;
-  let boundInput = null;
+  let wasEnded = false;
 
   function readTargetWord(wordEl) {
     if (!wordEl) return '';
@@ -20,6 +20,13 @@
     return text;
   }
 
+  function isTypingContext(target) {
+    if (!target || target === document.body || target === document.documentElement) return true;
+    if (target.id === 'wordsInput') return true;
+    const tag = target.tagName;
+    return tag !== 'INPUT' && tag !== 'TEXTAREA' && !target.isContentEditable;
+  }
+
   function getConfig() {
     try {
       return JSON.parse(localStorage.getItem('config') || '{}');
@@ -29,103 +36,94 @@
   }
 
   function getTestType(cfg) {
+    const domType = document.querySelector('#result .stats .testType .bottom')?.textContent;
+    if (domType) {
+      const clean = domType.replace(/\s+/g, ' ').trim();
+      if (clean) return clean;
+    }
     const mode = cfg.mode || 'time';
     if (mode === 'time') return `time ${cfg.time || 30}s`;
     if (mode === 'words') return `words ${cfg.words || 25}`;
-    if (mode === 'quote') return 'quote';
-    if (mode === 'zen') return 'zen';
     return mode;
   }
 
-  function syncActiveWord(forceReset = false) {
+  function isResultVisible(resultEl) {
+    if (!resultEl) return false;
+    return !resultEl.classList.contains('hidden') && window.getComputedStyle(resultEl).display !== 'none';
+  }
+
+  function syncActiveWord() {
     const current = document.querySelector('#words .word.active');
-    if (!current) return;
-    if (forceReset || current !== activeWordEl) {
+    if (!current) return null;
+    if (current !== activeWordEl) {
       if (activeWordEl && engine.testActive) {
         engine.flushCurrentWord(false);
       }
       activeWordEl = current;
       engine.startWord(readTargetWord(current));
     }
+    return current;
   }
 
-  function bindWordsInput() {
-    const input = document.getElementById('wordsInput');
-    if (!input || input === boundInput) return;
-    boundInput = input;
+  function handleTestEnd() {
+    if (!engine.testActive) return;
 
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Tab' || e.key === 'Escape') {
-        activeWordEl = null;
-        engine.resetTest();
-        return;
-      }
-      if (!activeWordEl) syncActiveWord(true);
-      engine.onKeyDown(e);
+    const activeText = engine.targetWord;
+    const completedLastWord = Boolean(activeText && engine.prevTypedLen >= activeText.length);
+    engine.flushCurrentWord(!completedLastWord);
+    activeWordEl = null;
 
-      if (e.key === ' ' && engine.testActive) {
-        // Monkeytype advances .word.active on Space; flush before DOM shift
-        engine.flushCurrentWord(false);
-        activeWordEl = null;
-      }
-    }, true);
-
-    input.addEventListener('input', () => {
-      const current = document.querySelector('#words .word.active');
-      if (current && current !== activeWordEl) {
-        if (activeWordEl) engine.flushCurrentWord(false);
-        activeWordEl = current;
-        engine.startWord(readTargetWord(current));
-      }
-      if (activeWordEl) {
-        engine.onWordInput(input.value || '');
-      }
-    });
+    const cfg = getConfig();
+    engine.commitTest(getTestType(cfg), cfg.language || 'english');
   }
 
-  function observeLifecycle() {
-    const resultEl = document.getElementById('result');
-    const wordsEl = document.getElementById('words');
-    if (!resultEl || !wordsEl) {
-      setTimeout(observeLifecycle, 600);
+  window.addEventListener('keydown', (e) => {
+    if (!isTypingContext(e.target)) return;
+
+    if (e.key === 'Tab' || e.key === 'Escape') {
+      activeWordEl = null;
+      wasEnded = false;
+      engine.resetTest();
       return;
     }
 
-    bindWordsInput();
+    if (isResultVisible(document.getElementById('result'))) return;
 
-    const resultObserver = new MutationObserver(() => {
-      const typingHidden = document.getElementById('typingTest')?.classList.contains('hidden');
-      const resultVisible = window.getComputedStyle(resultEl).display !== 'none';
-      if ((resultVisible || typingHidden) && engine.testActive) {
-        // Flush final word cleanly (partial=true preserves timed expiry mid-word without false errors)
-        const activeText = readTargetWord(activeWordEl);
-        const completedLastWord = activeText && engine.prevTypedLen >= activeText.length;
-        engine.flushCurrentWord(!completedLastWord);
-        activeWordEl = null;
+    syncActiveWord();
+    engine.onKeyDown(e);
 
-        const cfg = getConfig();
-        engine.commitTest(getTestType(cfg), cfg.language || 'english');
-      } else if (!resultVisible && !typingHidden) {
-        bindWordsInput();
-      }
-    });
+    if (e.key === ' ' && engine.testActive) {
+      engine.flushCurrentWord(false);
+      activeWordEl = null;
+    }
+  }, true);
 
-    resultObserver.observe(resultEl, { attributes: true, attributeFilter: ['style', 'class'] });
+  document.addEventListener('input', (e) => {
+    if (!e.target || e.target.id !== 'wordsInput') return;
+    if (isResultVisible(document.getElementById('result'))) return;
 
-    const wordsObserver = new MutationObserver(() => {
-      bindWordsInput();
-      const current = document.querySelector('#words .word.active');
-      if (current && current !== activeWordEl) {
-        // Test restarted via UI button or quick restart
-        if (!engine.testActive) {
-          activeWordEl = current;
-          engine.startWord(readTargetWord(current));
-        }
-      }
-    });
+    const current = syncActiveWord();
+    if (!current) return;
 
-    wordsObserver.observe(wordsEl, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
-  }
+    const raw = e.target.value || '';
+    const clean = (raw.startsWith(' ') && !engine.targetWord.startsWith(' ')) ? raw.slice(1) : raw;
+    engine.onWordInput(clean);
+  }, true);
 
-  observeLifecycle();
+  const lifecycleObserver = new MutationObserver(() => {
+    const nowEnded = isResultVisible(document.getElementById('result'));
+    if (nowEnded && !wasEnded) {
+      wasEnded = true;
+      handleTestEnd();
+    } else if (!nowEnded) {
+      wasEnded = false;
+    }
+  });
+
+  lifecycleObserver.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['style', 'class']
+  });
 })();

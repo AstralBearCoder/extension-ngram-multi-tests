@@ -22,10 +22,6 @@
     return LANG_MAP[base] || 'eng';
   }
 
-  /**
-   * Tokenizes text into atomic units, honoring 'qu=1' mode without regex allocation.
-   * Returns { units: string[], starts: Uint8Array, ends: Uint8Array, count: number }.
-   */
   function tokenizeWordUnits(word, quAsOne) {
     const chars = Array.from(word);
     const n = Math.min(chars.length, MAX_WORD_CHARS);
@@ -64,7 +60,6 @@
       this.quAsOne = false;
       this.enabled = true;
 
-      // Preallocated hot-path buffers for current word (zero GC churn)
       this.charTs = new Float64Array(MAX_WORD_CHARS);
       this.charOk = new Uint8Array(MAX_WORD_CHARS);
       this.charDirty = new Uint8Array(MAX_WORD_CHARS);
@@ -77,7 +72,7 @@
 
       this.testActive = false;
       this.totalKeystrokes = 0;
-      this.staged = Object.create(null); // { [ngram]: [len, okCount, okSumMs, errCount] }
+      this.staged = {};
       this.toastTimer = null;
 
       this._syncPrefs();
@@ -117,13 +112,12 @@
     resetTest() {
       this.testActive = false;
       this.totalKeystrokes = 0;
-      this.staged = Object.create(null);
+      this.staged = {};
       this.startWord('');
     }
 
     onKeyDown(e) {
       if (!this.enabled || !e.isTrusted || e.repeat || e.isComposing) return;
-      // Ignore pure Ctrl/Meta shortcuts while keeping AltGr (ctrl+alt on Windows)
       if ((e.ctrlKey && !e.altKey && e.key !== 'Backspace') || e.metaKey) return;
 
       if (e.key === 'Backspace') {
@@ -143,9 +137,6 @@
       }
     }
 
-    /**
-     * Reconciles the input box string against targetChars with exact timestamps.
-     */
     onWordInput(typedValue) {
       if (!this.enabled || !this.targetWord) return;
       const now = Number.isFinite(this.pendingKeyTs) ? this.pendingKeyTs : performance.now();
@@ -160,14 +151,12 @@
       }
 
       if (newLen < this.prevTypedLen) {
-        // Backspace or Ctrl+Backspace erased [newLen .. prevTypedLen - 1]
         const from = Math.max(0, newLen);
         const to = Math.min(this.prevTypedLen, targetLen);
         for (let p = from; p < to; p++) {
           this.charDirty[p] = 1;
           this.charOk[p] = 0;
         }
-        // Overshoot correction if previously past targetLen
         if (this.prevTypedLen > targetLen && targetLen > 0) {
           this.charDirty[targetLen - 1] = 1;
         }
@@ -175,7 +164,6 @@
         return;
       }
 
-      // Forward typing (1 char or dead-key composition result)
       const startIdx = Math.max(0, this.prevTypedLen);
       for (let p = startIdx; p < newLen; p++) {
         if (p >= targetLen) {
@@ -193,10 +181,6 @@
       this.prevTypedLen = newLen;
     }
 
-    /**
-     * Extracts all 2, 3, and 4-grams from the current word.
-     * @param {boolean} isPartialEnd - true when timer expired mid-word (do not penalize untyped suffix).
-     */
     flushCurrentWord(isPartialEnd = false) {
       if (!this.enabled || !this.targetWord || this.prevTypedLen === 0) return;
 
@@ -212,13 +196,11 @@
           const b = a + len - 1;
           const endChar = ends[b];
 
-          // When test timer expires mid-word, skip units beyond what user actually reached
           if (isPartialEnd && endChar >= maxCheckChar) continue;
 
           const startChar = starts[a];
           let clean = true;
 
-          // Anchor unit 'a': must be typed accurately; internal 'qu' transition must be clean
           for (let c = startChar; c <= ends[a]; c++) {
             if (this.charOk[c] !== 1) {
               clean = false;
@@ -230,7 +212,6 @@
             }
           }
 
-          // Subsequent units [a+1 .. b]: must be both accurate AND untouched by errors/backspace
           if (clean) {
             for (let u = a + 1; u <= b; u++) {
               for (let c = starts[u]; c <= ends[u]; c++) {
@@ -251,7 +232,6 @@
             if (dt >= MIN_IKI_MS && dt <= MAX_IKI_MS) {
               this._record(ngramStr, len, true, dt);
             }
-            // dt > MAX_IKI_MS: AFK pause -> discarded from both speed & errors
           } else {
             this._record(ngramStr, len, false, 0);
           }
@@ -278,30 +258,35 @@
       if (!this.enabled || !this.testActive) return;
       this.testActive = false;
 
+      const stagedCount = Object.keys(this.staged).length;
       const lang = resolveLangCode(rawLang);
       const ngramsMap = this.staged;
       const strokes = this.totalKeystrokes;
 
-      this.staged = Object.create(null);
+      this.staged = {};
       this.totalKeystrokes = 0;
       this.startWord('');
 
-      if (Object.keys(ngramsMap).length === 0) return;
+      if (stagedCount === 0) return;
 
-      const saved = await globalThis.__NgramStorage.saveTest(
-        {
-          site: this.siteId,
-          siteLabel: this.siteLabel,
-          testType: testType || 'standard',
-          lang,
-          strokes,
-          quAsOne: this.quAsOne
-        },
-        ngramsMap
-      );
+      try {
+        const saved = await globalThis.__NgramStorage.saveTest(
+          {
+            site: this.siteId,
+            siteLabel: this.siteLabel,
+            testType: testType || 'standard',
+            lang,
+            strokes,
+            quAsOne: this.quAsOne
+          },
+          ngramsMap
+        );
 
-      if (saved) {
-        this._showToast(saved.row.name, saved.totalTests);
+        if (saved) {
+          this._showToast(saved.row.name, saved.totalTests);
+        }
+      } catch (err) {
+        console.error('[ngramIntl] saveTest failed:', err);
       }
     }
 
