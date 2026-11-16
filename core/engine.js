@@ -63,10 +63,14 @@
       this.charTs = new Float64Array(MAX_WORD_CHARS);
       this.charOk = new Uint8Array(MAX_WORD_CHARS);
       this.charDirty = new Uint8Array(MAX_WORD_CHARS);
+      this.charEpoch = new Uint16Array(MAX_WORD_CHARS);
+      this.winErr = new Uint8Array(MAX_WORD_CHARS * 3);
 
       this.targetWord = '';
       this.targetChars = [];
+      this.unitData = null;
       this.prevTypedLen = 0;
+      this.editEpoch = 0;
       this.pendingKeyTs = NaN;
       this.lastKeyWasBackspace = false;
 
@@ -102,9 +106,13 @@
       this.charTs.fill(0);
       this.charOk.fill(0);
       this.charDirty.fill(0);
+      this.charEpoch.fill(0);
+      this.winErr.fill(0);
       this.targetWord = targetWord || '';
-      this.targetChars = Array.from(this.targetWord);
+      this.unitData = this.targetWord ? tokenizeWordUnits(this.targetWord, this.quAsOne) : null;
+      this.targetChars = this.unitData ? this.unitData.chars : [];
       this.prevTypedLen = 0;
+      this.editEpoch = 0;
       this.pendingKeyTs = NaN;
       this.lastKeyWasBackspace = false;
     }
@@ -137,40 +145,76 @@
       }
     }
 
+    _evaluateUnit(b) {
+      const { units, starts, ends } = this.unitData;
+      const endChar = ends[b];
+
+      for (let len = 2; len <= 4; len++) {
+        const a = b - len + 1;
+        if (a < 0) break;
+
+        const startChar = starts[a];
+        let allOk = true;
+        let hasDirtyNonAnchor = false;
+
+        for (let c = startChar; c <= endChar; c++) {
+          if (this.charOk[c] !== 1) {
+            allOk = false;
+            break;
+          }
+          if (c > startChar && this.charDirty[c] === 1) {
+            hasDirtyNonAnchor = true;
+          }
+        }
+
+        let ngramStr = '';
+        for (let u = a; u <= b; u++) ngramStr += units[u];
+        const slot = b * 3 + (len - 2);
+
+        if (!allOk) {
+          this._record(ngramStr, len, false, 0);
+          this.winErr[slot] = 1;
+        } else if (this.charEpoch[startChar] === this.charEpoch[endChar]) {
+          const dt = this.charTs[endChar] - this.charTs[startChar];
+          if (dt >= MIN_IKI_MS && dt <= MAX_IKI_MS) {
+            this._record(ngramStr, len, true, dt);
+          }
+        } else if (hasDirtyNonAnchor && this.winErr[slot] === 0) {
+          this._record(ngramStr, len, false, 0);
+          this.winErr[slot] = 1;
+        }
+      }
+    }
+
     onWordInput(typedValue) {
-      if (!this.enabled || !this.targetWord) return;
+      if (!this.enabled || !this.unitData) return;
       const now = Number.isFinite(this.pendingKeyTs) ? this.pendingKeyTs : performance.now();
       this.pendingKeyTs = NaN;
 
       const typedChars = Array.from(typedValue);
       const newLen = typedChars.length;
-      const targetLen = Math.min(this.targetChars.length, MAX_WORD_CHARS);
+      const targetLen = this.unitData.charCount;
 
       if (newLen > 0 && !this.testActive) {
         this.testActive = true;
       }
 
       if (newLen < this.prevTypedLen) {
+        this.editEpoch = (this.editEpoch + 1) & 0xffff;
         const from = Math.max(0, newLen);
         const to = Math.min(this.prevTypedLen, targetLen);
         for (let p = from; p < to; p++) {
-          this.charDirty[p] = 1;
           this.charOk[p] = 0;
-        }
-        if (this.prevTypedLen > targetLen && targetLen > 0) {
-          this.charDirty[targetLen - 1] = 1;
         }
         this.prevTypedLen = newLen;
         return;
       }
 
       const startIdx = Math.max(0, this.prevTypedLen);
-      for (let p = startIdx; p < newLen; p++) {
-        if (p >= targetLen) {
-          if (targetLen > 0) this.charDirty[targetLen - 1] = 1;
-          continue;
-        }
+      const maxChar = Math.min(newLen, targetLen);
+      for (let p = startIdx; p < maxChar; p++) {
         this.charTs[p] = now;
+        this.charEpoch[p] = this.editEpoch;
         if (typedChars[p] === this.targetChars[p]) {
           this.charOk[p] = 1;
         } else {
@@ -179,61 +223,34 @@
         }
       }
       this.prevTypedLen = newLen;
+
+      if (maxChar > startIdx) {
+        const { ends, count } = this.unitData;
+        for (let b = 0; b < count; b++) {
+          const endChar = ends[b];
+          if (endChar >= startIdx && endChar < maxChar) {
+            this._evaluateUnit(b);
+          } else if (endChar >= maxChar) {
+            break;
+          }
+        }
+      }
     }
 
     flushCurrentWord(isPartialEnd = false) {
-      if (!this.enabled || !this.targetWord || this.prevTypedLen === 0) return;
+      if (!this.enabled || !this.unitData || this.prevTypedLen === 0) return;
 
-      const { units, starts, ends, count, charCount } = tokenizeWordUnits(this.targetWord, this.quAsOne);
-      if (count < 2) return;
-
-      const maxCheckChar = isPartialEnd ? Math.min(this.prevTypedLen, charCount) : charCount;
-
-      for (let len = 2; len <= 4; len++) {
-        if (count < len) break;
-
-        for (let a = 0; a <= count - len; a++) {
-          const b = a + len - 1;
-          const endChar = ends[b];
-
-          if (isPartialEnd && endChar >= maxCheckChar) continue;
-
-          const startChar = starts[a];
-          let clean = true;
-
-          for (let c = startChar; c <= ends[a]; c++) {
-            if (this.charOk[c] !== 1) {
-              clean = false;
-              break;
+      if (!isPartialEnd) {
+        const { units, ends, count } = this.unitData;
+        for (let b = 0; b < count; b++) {
+          if (ends[b] >= this.prevTypedLen) {
+            for (let len = 2; len <= 4; len++) {
+              const a = b - len + 1;
+              if (a < 0) break;
+              let ngramStr = '';
+              for (let u = a; u <= b; u++) ngramStr += units[u];
+              this._record(ngramStr, len, false, 0);
             }
-            if (c > startChar && this.charDirty[c] === 1) {
-              clean = false;
-              break;
-            }
-          }
-
-          if (clean) {
-            for (let u = a + 1; u <= b; u++) {
-              for (let c = starts[u]; c <= ends[u]; c++) {
-                if (this.charOk[c] !== 1 || this.charDirty[c] === 1) {
-                  clean = false;
-                  break;
-                }
-              }
-              if (!clean) break;
-            }
-          }
-
-          let ngramStr = '';
-          for (let u = a; u <= b; u++) ngramStr += units[u];
-
-          if (clean) {
-            const dt = this.charTs[endChar] - this.charTs[startChar];
-            if (dt >= MIN_IKI_MS && dt <= MAX_IKI_MS) {
-              this._record(ngramStr, len, true, dt);
-            }
-          } else {
-            this._record(ngramStr, len, false, 0);
           }
         }
       }
