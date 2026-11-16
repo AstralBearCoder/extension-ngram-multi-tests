@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <style>
     * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
     body {
       width: 340px;
       margin: 0;
@@ -12,6 +13,7 @@
       color: #f1f5f9;
       font-family: system-ui, -apple-system, sans-serif;
       font-size: 12px;
+      overflow-x: hidden;
     }
     .header {
       display: flex;
@@ -119,6 +121,23 @@
     .btn:disabled { opacity: 0.4; cursor: not-allowed; }
     .btn-export { background: #facc15; color: #14161a; }
     .btn-clear { background: #334155; color: #f87171; flex: 0 0 96px; }
+    .confirm-bar {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      background: #2b181b;
+      border: 1px solid #7f1d1d;
+      border-radius: 5px;
+      padding: 8px;
+    }
+    .confirm-msg {
+      color: #fecaca;
+      font-size: 11px;
+      line-height: 1.3;
+    }
+    .confirm-btns { display: flex; gap: 6px; }
+    .btn-danger { background: #ef4444; color: #fff; }
+    .btn-cancel { background: #334155; color: #e2e8f0; }
     .empty { padding: 16px; text-align: center; color: #64748b; }
   </style>
 </head>
@@ -153,7 +172,15 @@
 
   <div id="tests-list" class="tests-list"></div>
 
-  <div class="actions">
+  <div id="confirm-bar" class="confirm-bar" hidden>
+    <div id="confirm-msg" class="confirm-msg"></div>
+    <div class="confirm-btns">
+      <button id="confirm-yes" class="btn btn-danger">Confirm</button>
+      <button id="confirm-no" class="btn btn-cancel">Cancel</button>
+    </div>
+  </div>
+
+  <div id="actions-bar" class="actions">
     <button id="btn-export" class="btn btn-export">Export JSON</button>
     <button id="btn-clear" class="btn btn-clear">Clear all</button>
   </div>

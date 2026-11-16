@@ -5,6 +5,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const langFilterEl = document.getElementById('lang-filter');
   const selectAllEl = document.getElementById('select-all');
   const testsListEl = document.getElementById('tests-list');
+  const actionsBarEl = document.getElementById('actions-bar');
+  const confirmBarEl = document.getElementById('confirm-bar');
+  const confirmMsgEl = document.getElementById('confirm-msg');
+  const confirmYesBtn = document.getElementById('confirm-yes');
+  const confirmNoBtn = document.getElementById('confirm-no');
   const btnExport = document.getElementById('btn-export');
   const btnClear = document.getElementById('btn-clear');
   const quRadios = document.querySelectorAll('input[name="quMode"]');
@@ -12,6 +17,31 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   let allTests = [];
   const selectedIds = new Set();
+  let pendingConfirm = null;
+
+  function closeConfirm(runCancel = true) {
+    const cancel = pendingConfirm?.onCancel;
+    pendingConfirm = null;
+    confirmBarEl.hidden = true;
+    actionsBarEl.hidden = false;
+    if (runCancel && cancel) cancel();
+  }
+
+  function askConfirm(message, onConfirm, onCancel = null) {
+    if (pendingConfirm) closeConfirm(true);
+    pendingConfirm = { onConfirm, onCancel };
+    confirmMsgEl.textContent = message;
+    actionsBarEl.hidden = true;
+    confirmBarEl.hidden = false;
+  }
+
+  confirmYesBtn.addEventListener('click', async () => {
+    const fn = pendingConfirm?.onConfirm;
+    closeConfirm(false);
+    if (fn) await fn();
+  });
+
+  confirmNoBtn.addEventListener('click', () => closeConfirm(true));
 
   async function initPrefs() {
     const prefs = await S.getPrefs();
@@ -150,16 +180,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     r.addEventListener('change', async () => {
       if (!r.checked) return;
       const nextQu = r.value === '1';
-      if (allTests.length > 0) {
-        const ok = confirm('Switching between Qu = 1 and Qu = 2 will delete all recorded tests. Are you sure you want to continue?');
-        if (!ok) {
-          await initPrefs();
-          return;
-        }
+      if (allTests.length === 0) {
+        await S.switchQuMode(nextQu);
+        return;
       }
-      await S.switchQuMode(nextQu);
-      selectedIds.clear();
-      await refreshUI();
+      askConfirm(
+        `Switching to qu = ${nextQu ? 1 : 2} will delete all ${allTests.length} recorded test(s). Continue?`,
+        async () => {
+          await S.switchQuMode(nextQu);
+          selectedIds.clear();
+          await refreshUI();
+        },
+        initPrefs
+      );
     });
   });
 
@@ -198,13 +231,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     URL.revokeObjectURL(url);
   });
 
-  btnClear.addEventListener('click', async () => {
+  btnClear.addEventListener('click', () => {
     if (!allTests.length) return;
-    if (confirm(`Permanently delete all ${allTests.length} recorded test(s)?`)) {
-      await S.clearAllTests();
-      selectedIds.clear();
-      await refreshUI();
-    }
+    askConfirm(
+      `Permanently delete all ${allTests.length} recorded test(s)?`,
+      async () => {
+        await S.clearAllTests();
+        selectedIds.clear();
+        await refreshUI();
+      }
+    );
   });
 
   await initPrefs();
