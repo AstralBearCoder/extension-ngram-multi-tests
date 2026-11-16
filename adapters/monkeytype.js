@@ -5,6 +5,7 @@
   const engine = new SurgicalEngine('monkeytype', 'Monkeytype');
 
   let activeWordEl = null;
+  let flushedWordEl = null;
   let wasEnded = false;
 
   function readTargetWord(wordEl) {
@@ -54,9 +55,10 @@
 
   function syncActiveWord() {
     const current = document.querySelector('#words .word.active');
-    if (!current) return null;
+    if (!current || current === flushedWordEl) return null;
     if (current !== activeWordEl) {
       if (activeWordEl && engine.testActive) {
+        flushedWordEl = activeWordEl;
         engine.flushCurrentWord(false);
       }
       activeWordEl = current;
@@ -72,6 +74,7 @@
     const completedLastWord = Boolean(activeText && engine.prevTypedLen >= activeText.length);
     engine.flushCurrentWord(!completedLastWord);
     activeWordEl = null;
+    flushedWordEl = null;
 
     const cfg = getConfig();
     engine.commitTest(getTestType(cfg), cfg.language || 'english');
@@ -82,6 +85,7 @@
 
     if (e.key === 'Tab' || e.key === 'Escape') {
       activeWordEl = null;
+      flushedWordEl = null;
       wasEnded = false;
       engine.resetTest();
       return;
@@ -89,13 +93,17 @@
 
     if (isResultVisible(document.getElementById('result'))) return;
 
+    if (e.key === ' ') {
+      if (engine.testActive && activeWordEl) {
+        flushedWordEl = activeWordEl;
+        engine.flushCurrentWord(false);
+        activeWordEl = null;
+      }
+      return;
+    }
+
     syncActiveWord();
     engine.onKeyDown(e);
-
-    if (e.key === ' ' && engine.testActive) {
-      engine.flushCurrentWord(false);
-      activeWordEl = null;
-    }
   }, true);
 
   document.addEventListener('input', (e) => {

@@ -5,6 +5,7 @@
   const engine = new SurgicalEngine('fastfingers10', '10FastFingers');
 
   let currentWordKey = null;
+  let lastFlushedKey = null;
   let awaitingSpaceClear = false;
   let wasEnded = false;
 
@@ -51,9 +52,10 @@
 
   function syncActiveWord() {
     const state = readActiveWordState();
-    if (!state) return;
+    if (!state || state.key === lastFlushedKey) return;
     if (state.key !== currentWordKey) {
       if (currentWordKey !== null && engine.testActive) {
+        lastFlushedKey = currentWordKey;
         engine.flushCurrentWord(false);
       }
       currentWordKey = state.key;
@@ -67,11 +69,9 @@
     if (e.key === 'F5' || e.key === 'Escape') return;
     if (isTestFinished()) return;
 
-    syncActiveWord();
-    engine.onKeyDown(e);
-
     if (e.key === ' ' && engine.testActive) {
       const ta = e.target;
+      lastFlushedKey = currentWordKey;
       engine.flushCurrentWord(false);
       currentWordKey = null;
       awaitingSpaceClear = true;
@@ -80,7 +80,11 @@
           awaitingSpaceClear = false;
         }
       });
+      return;
     }
+
+    syncActiveWord();
+    engine.onKeyDown(e);
   }, true);
 
   document.addEventListener('input', (e) => {
@@ -107,6 +111,7 @@
       wasEnded = true;
       engine.flushCurrentWord(true);
       currentWordKey = null;
+      lastFlushedKey = null;
       awaitingSpaceClear = false;
       engine.commitTest(getTestType(), detectLang());
     } else if (!finished) {
